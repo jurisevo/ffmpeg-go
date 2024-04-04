@@ -39,6 +39,7 @@ var (
 		"libpng16",
 		"libpostproc",
 		"libspeex",
+		"libvmaf",
 		"libswresample",
 		"libswscale",
 		"libtheora",
@@ -66,23 +67,23 @@ func main() {
 		log.Panicln(err)
 	}
 
-	//os.RemoveAll(tempDir)
+	// os.RemoveAll(tempDir)
 	os.RemoveAll(buildDir)
 	os.RemoveAll(tgtDir)
 
-	if err := os.MkdirAll(downloadsDir, 0755); err != nil {
+	if err := os.MkdirAll(downloadsDir, 0o755); err != nil {
 		log.Panicln(err)
 	}
 
-	if err := os.MkdirAll(buildDir, 0755); err != nil {
+	if err := os.MkdirAll(buildDir, 0o755); err != nil {
 		log.Panicln(err)
 	}
 
-	if err := os.MkdirAll(tgtDir, 0755); err != nil {
+	if err := os.MkdirAll(tgtDir, 0o755); err != nil {
 		log.Panicln(err)
 	}
 
-	if err := os.MkdirAll(libDir, 0755); err != nil {
+	if err := os.MkdirAll(libDir, 0o755); err != nil {
 		log.Panicln(err)
 	}
 
@@ -127,6 +128,7 @@ func main() {
 	buildTheora()
 	buildVpx()
 	buildX264()
+	buildVMAF()
 
 	b.buildFFmpeg()
 
@@ -191,7 +193,7 @@ func buildVpx() {
 
 	unzip(zipPath, srcPath)
 
-	if err := os.MkdirAll(buildDir, 0755); err != nil {
+	if err := os.MkdirAll(buildDir, 0o755); err != nil {
 		log.Panicln(err)
 	}
 
@@ -1038,13 +1040,13 @@ func buildAOM() {
 	buildPath := path.Join(buildDir, "aom-build")
 
 	if !exists(zipPath) {
-		//https://aomedia.googlesource.com/aom/+/refs/tags/v3.8.1
+		// https://aomedia.googlesource.com/aom/+/refs/tags/v3.8.1
 		download("https://aomedia.googlesource.com/aom/+archive/bb6430482199eaefbeaaa396600935082bc43f66.tar.gz", zipPath)
 	}
 
 	untar(zipPath, srcPath, "")
 
-	if err := os.MkdirAll(buildPath, 0755); err != nil {
+	if err := os.MkdirAll(buildPath, 0o755); err != nil {
 		log.Panicln(err)
 	}
 
@@ -1080,6 +1082,48 @@ func buildAOM() {
 	}
 }
 
+func buildVMAF() {
+	zipPath := path.Join(downloadsDir, "vmaf.tar.gz")
+	srcPath := path.Join(buildDir, "vmaf")
+
+	if !exists(zipPath) {
+		download("https://codeload.github.com/Netflix/vmaf/tar.gz/refs/tags/v3.0.0", zipPath)
+	}
+
+	untar(zipPath, srcPath, "vmaf-3.0.0/")
+
+	{
+		log.Println("Running setup")
+
+		cmd := cmd(
+			"meson",
+			path.Join(srcPath, "libvmaf"),
+			"setup",
+			"build",
+			fmt.Sprintf("--prefix=%v", tgtDir),
+			fmt.Sprintf("--libdir=%v", libDir),
+			"-Denable_avx512=true",
+			"--buildtype=release",
+			"--default-library=static",
+		)
+		run("[vmaf setup]", cmd)
+	}
+
+	{
+		log.Println("Running build")
+
+		cmd := cmd(
+			"ninja",
+			path.Join(srcPath, "libvmaf"),
+			"-vC",
+			"build",
+			"install",
+		)
+
+		run("[vmaf build]", cmd)
+	}
+}
+
 func (b *Builder) buildFFmpeg() {
 	zipPath := path.Join(downloadsDir, "ffmpeg.zip")
 	buildPath := path.Join(buildDir, "ffmpeg")
@@ -1097,6 +1141,7 @@ func (b *Builder) buildFFmpeg() {
 			path.Join(buildPath, "configure"),
 			buildPath,
 			"--cc=/usr/bin/clang",
+			"--ld=g++",
 			fmt.Sprintf("--prefix=%v", tgtDir),
 			"--pkg-config-flags=--static",
 			fmt.Sprintf("--extra-cflags=-I%v", incDir),
@@ -1120,6 +1165,7 @@ func (b *Builder) buildFFmpeg() {
 			"--enable-libtheora",
 			"--enable-libvpx",
 			"--enable-libx264",
+			"--enable-libvmaf",
 
 			//--enable-libx265         enable HEVC encoding via x265 [no]
 		)
